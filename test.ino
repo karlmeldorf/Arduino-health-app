@@ -3,8 +3,8 @@
 #include <MySignals.h>
 #include <MySignals_BLE.h>
 
-const char* ssid      = "Elion-46A29C";
-const char* password  = "D86F261B9A";
+const char* ssid      = "";
+const char* password  = "";
 
 String _server = "";
 char _MAC_SPO2[14] = "00A050042F13";
