@@ -3,12 +3,12 @@
 #include <MySignals.h>
 #include <MySignals_BLE.h>
 
-Controller::Controller(char* _MAC_SPO2, char* _MAC_BP, String _server) 
+Controller::Controller(char* _MAC_SPO2, char* _MAC_BP, char* user) 
 : SPO2_HANDLE(15)
 , BP_HANDLE(18)
 , MAC_SPO2(_MAC_SPO2)
 , MAC_BP(_MAC_BP)
-, server(_server)
+, m_user(user)
 , available_spo2(0)
 , connected_spo2(0)
 , connection_handle_spo2(0)
@@ -18,12 +18,14 @@ Controller::Controller(char* _MAC_SPO2, char* _MAC_BP, String _server)
 , connected_bp(0)
 , connection_handle_bp(0)
 , bloodPressureBLEData()
+, buffer_tft()
+, tft(Adafruit_ILI9341_AS(TFT_CS, TFT_DC))
 {
 }
 
 Controller::~Controller() {}
 
-bool Controller::sendData(const char* command, const char* expected_answer, const int timeout, boolean debug)
+bool Controller::sendData(const char* command, const int timeout, boolean debug)
 {
   String response = "";
   bool answer = false;
@@ -49,7 +51,18 @@ bool Controller::sendData(const char* command, const char* expected_answer, cons
     MySignals.println(response.c_str());
   }
   
-  return true;
+  return strstr(response.c_str(), "OK");
+}
+
+void Controller::initTFT() {
+  tft.init();
+  tft.setRotation(2);
+  tft.fillScreen(ILI9341_BLACK);
+  tft.setTextColor(ILI9341_WHITE, ILI9341_BLACK);
+
+  //TFT message: Welcome to MySignals
+  strcpy_P((char*)buffer_tft, (char*)pgm_read_word(&(table_MISC[0])));
+  tft.drawString(buffer_tft, 0, 0, 2); 
 }
 
 void Controller::setupWifi(String ssid, String password) {
@@ -63,9 +76,11 @@ void Controller::setupWifi(String ssid, String password) {
 
   String cwjap = "AT+CWJAP=\"" + ssid + "\",\"" + password + "\"";
 
-  sendData("AT", "OK",1000, true);
-  sendData("AT+CWMODE=1", "OK", 1000, true);
-  sendData(cwjap.c_str(), "OK", 10000, true);
+  sendData("AT", 1000, true);
+  sendData("AT+CWMODE=1", 1000, true);
+  if (sendData(cwjap.c_str(), 10000, true)) {
+    tft.drawString("WiFi ok", 0, 30, 2);
+  }
 }
 
 void Controller::setupBluetooth() {
@@ -93,25 +108,29 @@ void Controller::setupBluetooth() {
   MySignals.enableSensorUART(BLE);
   MySignals_BLE.initialize_BLE_values();
 
-  if (MySignals_BLE.initModule() == 1 && MySignals_BLE.sayHello() == 1)
-      MySignals.println("BLE init ok");
-  else {
-      MySignals.println("BLE init fail");
+  if (MySignals_BLE.initModule() == 1 && MySignals_BLE.sayHello() == 1) {
+      MySignals.disableMuxUART();
+      Serial.println(F("BLE init ok"));
+      MySignals.enableMuxUART();
+      strcpy_P((char*)buffer_tft, (char*)pgm_read_word(&(table_MISC[1])));
+      tft.drawString(buffer_tft, 0, 15, 2);
+  } else {
+      MySignals.disableMuxUART();
+      Serial.println(F("BLE init fail"));
+      MySignals.enableMuxUART();
+      strcpy_P((char*)buffer_tft, (char*)pgm_read_word(&(table_MISC[2])));
+      tft.drawString(buffer_tft, 0, 15, 2);
       while (1);
   }
 }
 
 void Controller::httppost(String& api, String& requestBody) {
-
+  
   String request = "POST ";
   request += api;
-  request += " HTTP/1.1\r\n";
-  request += "Host: arduino-health-app.herokuapp.com\r\n";
-  request += "Content-Length: ";
+  request += " HTTP/1.1\r\nHost: arduino-health-app.herokuapp.com\r\nContent-Type: application/json\r\nContent-Length: ";
   request += requestBody.length();
-  request += "\r\n";
-  request += "Content-Type: application/json\r\n";
-  request += "\r\n";
+  request += "\r\n\r\n";
   request += requestBody;
 
   String sendPostRequest = "AT+CIPSEND=";
@@ -119,10 +138,10 @@ void Controller::httppost(String& api, String& requestBody) {
 
   const char* cipStart = "AT+CIPSTART=\"TCP\",\"arduino-health-app.herokuapp.com\",80";
 
-  sendData(cipStart, "OK", 2000, true);
-  sendData(sendPostRequest.c_str(), ">", 6000, true);
-  sendData(request.c_str(), "OK", 4000, true);
-  sendData("AT+CIPCLOSE", "OK", 1000, true);
+  sendData(cipStart, 2000, true);
+  sendData(sendPostRequest.c_str(), 6000, true);
+  sendData(request.c_str(), 4000, true);
+  sendData("AT+CIPCLOSE", 1000, true);
 }
 
 void Controller::run() {
@@ -138,23 +157,24 @@ void Controller::run() {
 void Controller::runSPO2() {
 
   MySignals.disableMuxUART();
-  Serial.print("SPO2 available:");
+  Serial.print(F("SPO2 available:"));
   Serial.println(available_spo2);
   MySignals.enableMuxUART();
 
   if (available_spo2 == 1)
   {
     MySignals.disableMuxUART();
-    Serial.println("SPO2 found.Connecting");
+    Serial.println(F("SPO2 found.Connecting"));
     MySignals.enableMuxUART();
-
 
     if (MySignals_BLE.connectDirect(MAC_SPO2) == 1)
     {
       connected_spo2 = 1;
       connection_handle_spo2 = MySignals_BLE.connection_handle;
 
-      MySignals.println("Connected");
+      MySignals.disableMuxUART();
+      Serial.println(F("Connected"));
+      MySignals.enableMuxUART();
 
       delay(6000);
 
@@ -209,6 +229,9 @@ void Controller::runSPO2() {
               Serial.print(pulse_spo2);
               Serial.println(F("ppm  "));
 
+              sprintf(buffer_tft, "Pulse: %d ppm / SPO2: %d", pulse_spo2, spo2);
+              tft.drawString(buffer_tft, 0, 60, 2);
+
               uint16_t errorCode = MySignals_BLE.disconnect(connection_handle_spo2);
 
               Serial.print(F("Disconnecting error code: "));
@@ -218,11 +241,13 @@ void Controller::runSPO2() {
               connected_spo2 = 0;
               
               MySignals.enableSensorUART(WIFI_ESP8266);
-              String api = "/api/spo2/save-sensor-result";
+              String api = "/api/spo2/result";
               String requestBody = "{\"spo2\": ";
               requestBody += String(spo2);
               requestBody += ",\"pulse\": "; 
               requestBody += String(pulse_spo2);
+              requestBody += ",\"user\": ";
+              requestBody += "\"" + String(m_user) + "\"";
               requestBody += "}\r\n";
               httppost(api, requestBody);
               MySignals.enableSensorUART(BLE);
@@ -236,14 +261,17 @@ void Controller::runSPO2() {
       }
       else
       {
-        MySignals.println("Error subscribing");
+         MySignals.disableMuxUART();
+         Serial.println(F("Subscribed"));
+         MySignals.enableMuxUART();
       }
     }
     else
     {
-      connected_spo2 = 0;
-
-      MySignals.println("Not Connected");
+       connected_spo2 = 0;
+       MySignals.disableMuxUART();
+       Serial.println(F("Not Connected"));
+       MySignals.enableMuxUART();
     }
   }
   else if (available_spo2 == 0)
@@ -263,7 +291,7 @@ void Controller::runSPO2() {
 void Controller::runBP() {
   
   MySignals.disableMuxUART();
-  Serial.print("BP available:");
+  Serial.print(F("BP available:"));
   Serial.println(available_bp);
   MySignals.enableMuxUART();
 
@@ -273,7 +301,9 @@ void Controller::runBP() {
 
     if (MySignals_BLE.connectDirect(MAC_BP) == 1)
     {
-      MySignals.println("Connected");
+      MySignals.disableMuxUART();
+      Serial.println(F("Connected"));
+      MySignals.enableMuxUART();
       
       connected_bp = 1;
       delay(8000);
@@ -281,7 +311,9 @@ void Controller::runBP() {
       if (MySignals_BLE.attributeWrite(MySignals_BLE.connection_handle,  BP_HANDLE, "e", 1) == 0)
       {
 
-       MySignals.println("Subscribed");
+       MySignals.disableMuxUART();
+       Serial.println(F("Subscribed"));
+       MySignals.enableMuxUART();
 
         unsigned long previous = millis();
         do
@@ -320,13 +352,15 @@ void Controller::runBP() {
                 Serial.println(bloodPressureBLEData.systolic);
 
                 Serial.print(F("Diastolic: "));
-                Serial.println( bloodPressureBLEData.diastolic);
+                Serial.println(bloodPressureBLEData.diastolic);
 
                 Serial.print(F("Pulse/min: "));
                 Serial.println(bloodPressureBLEData.pulse);
                 Serial.println(F("Disconnected from device"));
-
                 MySignals.enableMuxUART();
+
+                sprintf(buffer_tft, "S:%d D:%d P:%d      ", bloodPressureBLEData.systolic, bloodPressureBLEData.diastolic, bloodPressureBLEData.pulse);
+                tft.drawString(buffer_tft, 0, 60, 2);
                 
                 connected_bp = 0;
 
@@ -348,14 +382,18 @@ void Controller::runBP() {
       }
       else
       {
-        MySignals.println("Error subscribing");
+       MySignals.disableMuxUART();
+       Serial.println(F("Subscribed"));
+       MySignals.enableMuxUART();
       }
 
     }
     else
     {
-      connected_bp = 0;
-      MySignals.println("Not Connected");
+       connected_bp = 0;
+       MySignals.disableMuxUART();
+       Serial.println(F("Not Connected"));
+       MySignals.enableMuxUART();
     }
   }
   else if (available_bp == 0)
@@ -373,14 +411,16 @@ void Controller::runBP() {
   delay(1000);
   // make a POST request
   MySignals.enableSensorUART(WIFI_ESP8266);
-  String api = "/api/bp/save-sensor-result";
+  String api = "/api/bp/result";
   // request format example: "systolic": 115,"diastolic": 65,"pulse": 68
-  String requestBody = "{\"systolic\": ";
+  String requestBody = "{\"s\": ";
   requestBody += String(bloodPressureBLEData.systolic);
-  requestBody += ",\"diastolic\": "; 
+  requestBody += ",\"d\": "; 
   requestBody += String(bloodPressureBLEData.diastolic);
-  requestBody += ",\"pulse\": ";
+  requestBody += ",\"p\": ";
   requestBody += String(bloodPressureBLEData.pulse); 
+  requestBody += ",\"user\": ";
+  requestBody += "\"" + String(m_user) + "\"";
   requestBody += "}\r\n";
   httppost(api, requestBody);
   MySignals.enableSensorUART(BLE);

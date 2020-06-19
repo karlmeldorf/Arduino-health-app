@@ -21,8 +21,8 @@ float temp = 0.0;
 int tempHasntChangedSecs = 0;
 
 //WiFi
-const char* ssid      = "";
-const char* password  = "";
+const char* ssid      = "TRAPHOUSE";
+const char* password  = "pussymoneyweed";
 
 void setup(void)
 {
@@ -75,7 +75,7 @@ void loop(void)
 
 bool tempReached() {
 
-  if (temp >= 34.0 && temp <= 45.0) {
+  if (temp >= 32.0 && temp <= 45.0) {
     if (temp == previousTemp) {
       tempHasntChangedSecs += 1;
     } else {
@@ -96,10 +96,10 @@ if(WiFi.status()== WL_CONNECTED){   //Check WiFi connection status
   
    HTTPClient http;   
   
-   http.begin("https://arduino-health-app.herokuapp.com/api/temperature/save-sensor-result");  //Specify destination for HTTP request
+   http.begin("https://arduino-health-app.herokuapp.com/api/temperature/result");  //Specify destination for HTTP request
    http.addHeader("Content-Type", "application/json");             //Specify content-type header
   
-   int httpResponseCode = http.POST("{\"temperature\": " + String(temperature) + "}");   //Send the actual POST request
+   int httpResponseCode = http.POST("{\"temperature\": " + String(temperature) + "," + "user: testUser" + "}");   //Send the actual POST request
   
    if(httpResponseCode>0){
   

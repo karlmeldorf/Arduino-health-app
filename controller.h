@@ -1,11 +1,14 @@
 #include "Arduino.h"
+#include <Adafruit_GFX_AS.h>
+#include <Adafruit_ILI9341_AS.h>
 
 class Controller
 {
   public:
-    Controller(char* spo2MAC, char* spo2BP, String server);
+    Controller(char* spo2MAC, char* spo2BP, char* user);
     ~Controller();
-    
+
+    void initTFT();
     void setupWifi(String ssid, String password);
     void setupBluetooth();
     void run();
@@ -13,7 +16,7 @@ class Controller
     void runBP();
 
   private:
-    bool sendData(const char* command, const char* expected_answer, const int timeout, boolean debug);
+    bool sendData(const char* command, const int timeout, boolean debug);
     void httppost(String& api, String& requestBody);
 
   private:
@@ -21,7 +24,7 @@ class Controller
     int BP_HANDLE;
     char* MAC_SPO2;
     char* MAC_BP;
-    String server;
+    char* m_user;
     uint8_t available_spo2;
     uint8_t connected_spo2;
     uint8_t connection_handle_spo2;
@@ -37,4 +40,6 @@ class Controller
       uint16_t pulse;
     };
     bloodPressureBLEDataVector bloodPressureBLEData;
+    char buffer_tft[26];
+    Adafruit_ILI9341_AS tft;
 };
